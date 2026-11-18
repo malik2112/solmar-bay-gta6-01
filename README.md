@@ -1,6 +1,10 @@
 # SOLMAR BAY — an open-world crime game
 
-An original open-world crime game for make.fun's **gta6-01** bounty, built as
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/malik2112/solmar-bay-gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/malik2112/solmar-bay-gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+
+An original open-world crime game for [make.fun's **gta6-01** bounty](https://make.fun/bounty/gta6-01), built as
 plain static files that play offline in a desktop browser. No network, no
 build step: open `game/index.html` (or `node serve.ts` and visit
 http://localhost:8080).

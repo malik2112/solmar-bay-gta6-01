@@ -1,145 +1,96 @@
-// SOLMAR BAY — shots.js
-// One job: stage the game for its screenshots. ?shot=<name> drops the real
-// game into a real, playable state — a menu, a street, a chase, a mission —
-// and lets it run, so every screenshot is a true render of the game's code.
-// Nothing here is fake scenery: the same systems, traffic, police and HUD
-// the player gets, arranged for the camera.
-import { spawnCar, randomCarColor } from './vehicles.js';
-import { spawnPed } from './pedestrians.js';
-import { startMission } from './missions.js';
-import { addHeat } from './wanted.js';
+// Staged screenshot scenes (?shot=drive|street|mission|start, &seed=N).
+// Each one plays the real rules forward from a fresh world with a scripted
+// driver, so the frame is what the game really looks like — same seed,
+// same frame. Sets window.__shotReady via main.js after painting twice.
+import { STEP, HUB, PLACES, roadCenter } from './config.js';
 
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+// Edge actions (E to steal) only come from real key events — virtual input
+// holds keys down but never "presses" them — so stage the steal with one.
+function pressKey(code) {
+  window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+  window.dispatchEvent(new KeyboardEvent('keyup', { code }));
 }
 
-function clearTraffic(G) {
-  for (const car of [...G.cars]) {
-    if (car.kind === 'traffic') {
-      car.alive = false;
-      G.scene.remove(car.mesh);
-      G.cars.splice(G.cars.indexOf(car), 1);
-    }
-  }
-  for (const p of [...G.peds]) {
-    if (p.kind === 'walker') {
-      p.alive = false;
-      G.scene.remove(p.mesh);
-      G.peds.splice(G.peds.indexOf(p), 1);
-    }
-  }
+function stepN(game, seconds) {
+  const n = Math.round(seconds / STEP);
+  for (let i = 0; i < n; i++) game.step(STEP);
 }
 
-function clearPolice(G) {
-  for (const cop of [...G.wanted.police]) {
-    cop.alive = false;
-    G.scene.remove(cop.mesh);
-    const i = G.cars.indexOf(cop);
-    if (i >= 0) G.cars.splice(i, 1);
-  }
-  G.wanted.police.length = 0;
-}
-
-function stageStreet(G, rng, x, z, count, heading) {
-  // a busy avenue: cars on the road, walkers on the pavement
-  for (let i = 0; i < count; i++) {
-    const lane = (rng() < 0.5 ? -1 : 1) * 4;
-    const along = (rng() - 0.5) * 160;
-    const car = spawnCar(G.scene, x + lane, z + along, heading + (rng() < 0.5 ? 0 : Math.PI), randomCarColor(rng), 'traffic');
-    car.target = { x: x + lane, z: z + along + (heading === 0 ? 200 : -200) };
-    G.cars.push(car);
-  }
-  for (let i = 0; i < 8; i++) {
-    const p = spawnPed(G.scene, x + (rng() - 0.5) * 30, z + (rng() - 0.5) * 60, rng);
-    G.peds.push(p);
-  }
-}
-
-export function applyShot(G, name) {
-  const rng = mulberry32(1337);
-  G.shotMode = true;
-  document.title = 'SOLMAR BAY — shot: ' + name;
-  clearTraffic(G);
-  const showHud = name !== 'start';
-  document.getElementById('hud').style.display = showHud ? 'block' : 'none';
-
+export function stageShot(name, game) {
+  const g = game;
+  g.screen = 'play';
+  g.hud.hideScreens();
+  g.input.virtual = null;
   if (name === 'start') {
-    G.mode = 'menu';
-    return;
+    // Title over the city at dusk: traffic and crowds drifting, bay behind.
+    g.screen = 'title';
+    stepN(g, 3);
+    return { screen: 'title' };
   }
-
-  // every other shot: the game is already running
-  G.startGame(false);
-  G.hud.el.hint.style.opacity = '0';
-
   if (name === 'street') {
-    // on foot at a busy downtown crossing, mission 1 live, beacon ahead
-    G.player.pos.set(-6, 0, -40);
-    G.player.yaw = 0;
-    G.player.mesh.position.copy(G.player.pos);
-    stageStreet(G, rng, 0, 0, 7, 0);
-    // keep staged traffic out of the camera (it sits ~7m behind the player)
-    for (const car of G.cars) {
-      if (car.kind !== 'traffic') continue;
-      if (Math.hypot(car.pos.x - G.player.pos.x, car.pos.z - G.player.pos.z) < 14) {
-        car.pos.z += 30;
-        car.mesh.position.copy(car.pos);
-        if (car.target) car.target.z += 30;
-      }
+    // On foot outside Rosa's Garage: pedestrians around, first job offered.
+    g.player.x = HUB.x + 8; g.player.z = HUB.z + 6;
+    g.player.heading = Math.PI * 0.75;
+    g.player.sync();
+    // Pull a few pedestrians into the frame so the street feels alive.
+    const spots = [[-6, -4], [5, -7], [-3, 7], [8, 3]];
+    for (let i = 0; i < 4; i++) {
+      const p = g.peds[i];
+      p.x = g.player.x + spots[i][0]; p.z = g.player.z + spots[i][1];
+      p.target = { x: g.player.x - spots[i][0], z: g.player.z - spots[i][1] };
+      p.sync();
     }
-    startMission(G, 0);
-    G.player.cash = 50;
-  } else if (name === 'drive') {
-    // mid-chase: Jax in a yellow coupe at speed, 3 stars, two cruisers on him
-    const car = spawnCar(G.scene, 0, -60, 0, 0xe8c23a, 'traffic');
-    car.parked = false;
-    G.cars.push(car);
-    G.enterCar(car, true);
-    car.speed = 24;
-    G.shotInput = { up: true };
-    G.missions.index = 2;
-    startMission(G, 2);
-    // restage the pursuit: exactly two cruisers flanking the player, 3 stars.
-    // They hold formation beside Jax (shotFollow) so the chase is in frame
-    // at screenshot time whatever the frame rate; the chase AI runs them in
-    // real play, this staging only frames the shot.
-    clearPolice(G);
-    G.wanted.level = 3; // mission 3 starts at 2; the chase shot wants 3 stars
-    G.wanted.quietTimer = 0;
-    G.sound.sirenStart();
-    G.wanted.sirenOn = true;
-    for (const [dx, dz] of [[-5, 2], [5, 7]]) {
-      const cop = spawnCar(G.scene, dx, -60 + dz, 0, 0x14181c, 'police');
-      cop.shotFollow = { dx, dz };
-      G.cars.push(cop);
-      G.wanted.police.push(cop);
-    }
-    G.player.cash = 1250;
-  } else if (name === 'mission') {
-    // package run in progress: one collected, next beacon ahead, a cruiser near
-    G.player.pos.set(150, 0, 150);
-    G.player.yaw = Math.PI * 0.25;
-    G.player.mesh.position.copy(G.player.pos);
-    stageStreet(G, rng, 140, 140, 4, 0);
-    G.missions.index = 3;
-    startMission(G, 3);
-    G.missions.collected = 1;
-    G.missions.packageIndex = 1;
-    G.missions.beaconPos = { x: 170, z: 170 };
-    const firstPkg = G.missions.pkgMeshes[0];
-    if (firstPkg) G.scene.remove(firstPkg); // already collected: no beacon left
-    addHeat(G, 1, 'Speeding past a cruiser');
-    const cop = spawnCar(G.scene, 130, 120, Math.PI * 0.5, 0x14181c, 'police');
-    G.cars.push(cop);
-    G.wanted.police.push(cop);
-    G.player.cash = 820;
+    g.rig.distance = 9;
+    g.talkToRosa();
+    stepN(g, 2);
+    return { screen: 'play' };
   }
+  if (name === 'mission') {
+    // Sunset Courier: in a car near Marina Norte, beacon up, clock running.
+    // Approach along the west road (z = marina row, no sheds on that line),
+    // so the car ends up beside the beacon instead of wedged on a shed.
+    g.missions.index = 3;
+    g.talkToRosa();
+    const car = g.traffic[0];
+    car.x = roadCenter(4); car.z = PLACES.marina.z;
+    car.heading = Math.PI / 2; // east, toward the marina
+    car.speed = 0; car.sync();
+    g.player.x = car.x + 2; g.player.z = car.z + 2; g.player.sync();
+    pressKey('KeyE');
+    stepN(g, 0.2);
+    g.input.virtual = { up: true };
+    stepN(g, 2.5);
+    g.input.virtual = null;
+    return { screen: 'play' };
+  }
+  // Default: 'drive' — the cover. Stolen car tearing down the main avenue at
+  // dusk, 3 stars, two cruisers flanking, Rosa's job on the HUD.
+  g.wanted.addHeat(55);
+  const car = g.traffic[0];
+  car.x = roadCenter(3) + 3.2; car.z = 120;
+  car.heading = Math.PI; // north, up the avenue
+  car.speed = 0; car.sync();
+  g.player.x = car.x + 2; g.player.z = car.z + 2; g.player.sync();
+  pressKey('KeyE');
+  stepN(g, 0.3);
+  g.input.virtual = { up: true };
+  g.talkToRosa();
+  g.rig.distance = 10;
+  stepN(g, 4);
+  g.input.virtual = null;
+  // Park one cruiser in the frame: flanking the player's car, lights flashing,
+  // so the cover shows the chase instead of only hinting at it on the minimap.
+  const cop = g.wanted.policeCars[0];
+  if (cop) {
+    const v = g.player.vehicle;
+    const f = v.forward();
+    // Flank on the car's left (screen-left from the chase camera), 2 m ahead:
+    // a cruiser the camera can actually see, not one hiding behind the car.
+    cop.x = v.x + Math.cos(v.heading) * 7 + f.x * 2;
+    cop.z = v.z - Math.sin(v.heading) * 7 + f.z * 2;
+    cop.heading = v.heading;
+    cop.speed = v.speed;
+    cop.sync();
+  }
+  return { screen: 'play' };
 }
-
-export const SHOT_NAMES = ['start', 'street', 'drive', 'mission'];

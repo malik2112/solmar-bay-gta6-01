@@ -1,57 +1,36 @@
-// SOLMAR BAY — save.js
-// One job: persist Jax's progress in localStorage — cash, story progress,
-// stats — and load it back. The game never needs a server to remember.
+// Save / load: money, mission progress and where you stand, in localStorage.
 import { SAVE_KEY } from './config.js';
 
-export function saveGame(G) {
+export function saveGame(state) {
   try {
     const data = {
-      version: 1,
-      cash: G.player.cash,
-      missionIndex: G.missions.index,
-      missionsDone: G.stats.missionsDone,
-      carsStolen: G.stats.carsStolen,
-      shotsFired: G.stats.shotsFired,
-      playSeconds: Math.floor(G.time),
-      savedAt: new Date().toISOString(),
+      v: 1,
+      money: state.player.money,
+      missionsDone: state.missions.completedCount,
+      missionIndex: state.missions.index,
+      x: state.player.x,
+      z: state.player.z,
+      savedAt: Date.now(),
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
 
-export function loadSave() {
+export function loadGame() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = window.localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 1) return null;
+    if (!data || data.v !== 1) return null;
     return data;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
-export function applySave(G, data) {
-  if (!data) return false;
-  G.player.cash = data.cash ?? 50;
-  G.stats.missionsDone = data.missionsDone ?? 0;
-  G.stats.carsStolen = data.carsStolen ?? 0;
-  G.stats.shotsFired = data.shotsFired ?? 0;
-  // resume at the next uncompleted mission, back at Rosa's garage
-  G.missions.index = Math.min(data.missionIndex ?? 0, 4);
-  G.missions.state = 'waiting-hub';
-  G.player.pos.set(-180, 0, 168);
-  G.player.mesh.position.copy(G.player.pos);
-  return true;
-}
-
-export function hasSave() {
-  try {
-    return !!localStorage.getItem(SAVE_KEY);
-  } catch (e) {
-    return false;
-  }
+export function clearSave() {
+  try { window.localStorage.removeItem(SAVE_KEY); } catch { /* storage off */ }
 }

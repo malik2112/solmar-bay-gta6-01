@@ -1,126 +1,161 @@
-// SOLMAR BAY — selftest.js
-// One job: prove the game works without a human. ?selftest=1 drives the real
-// game through its real functions — start, steal a car, drive, wanted level,
-// police, mission completion, save/load, shooting, minimap — and writes
-// PASS/FAIL lines into #selftest and the document title for headless checks.
-import { addHeat } from './wanted.js';
-import { startMission } from './missions.js';
-import { fireWeapon } from './combat.js';
-import { saveGame, loadSave } from './save.js';
-import { spawnPed } from './pedestrians.js';
+// In-game self-test (?selftest=1): 12 checks that drive the real game — spawn,
+// city, traffic, pedestrians, stealing, driving, wanted, missions, combat,
+// save and HUD. Results land in window.__selftest and the console as
+// `SELFTEST <name> PASS|FAIL <detail>`. The drive check POLLS until the car
+// has moved > 5 m (cold swiftshader makes a fixed 2 s wait meaningless).
+import { STEP, TRAFFIC_COUNT, PED_COUNT, HUB, WANTED, roadCenter, dist2d } from './config.js';
+import { saveGame, loadGame } from './save.js';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function pressKey(code) {
+  window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+  window.dispatchEvent(new KeyboardEvent('keyup', { code }));
+}
 
-export async function runSelfTest(G) {
-  const results = [];
-  const el = document.getElementById('selftest');
-  const log = (name, ok, detail = '') => {
-    results.push({ name, ok, detail });
-    const line = `${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`;
-    if (el) {
-      const div = document.createElement('div');
-      div.textContent = line;
-      el.appendChild(div);
-    }
-    // eslint-disable-next-line no-console
-    console.log('[selftest] ' + line);
+async function stepFor(game, seconds) {
+  const n = Math.max(1, Math.round(seconds / STEP));
+  for (let i = 0; i < n; i++) {
+    game.step(STEP);
+    if (i % 60 === 59) await new Promise((r) => setTimeout(r, 0));
+  }
+}
+
+export async function runSelfTest(game) {
+  const checks = [];
+  const check = (name, ok, detail) => {
+    checks.push({ name, ok: !!ok, detail: String(detail ?? '') });
+    console.log(`SELFTEST ${name} ${ok ? 'PASS' : 'FAIL'} ${detail ?? ''}`);
   };
+  // Small render target while testing: swiftshader at 1280x720 is slow, and
+  // the checks step the simulation directly, not the renderer.
+  try { game.renderer.setSize(640, 360, false); } catch { /* ignore */ }
+  game.screen = 'play';
+  game.hud.hideScreens();
+  await new Promise((r) => setTimeout(r, 50));
 
   try {
-    // 1. boot: renderer + a real city in the scene
-    log('boot', !!G.renderer && G.scene.children.length > 60, `${G.scene.children.length} scene objects`);
-    // 2. start the game
-    G.startGame(true);
-    await sleep(300);
-    log('start', G.mode === 'playing', 'mode=' + G.mode);
-    // 3. steal a car: walk to the nearest car and press E (the real function)
-    let car = null;
-    let best = 1e9;
-    for (const c of G.cars) {
-      if (c.kind !== 'traffic') continue;
-      const d = Math.hypot(c.pos.x - G.player.pos.x, c.pos.z - G.player.pos.z);
-      if (d < best) { best = d; car = c; }
+    // 1. Boot.
+    check('boot', game.scene && game.renderer && game.camera && game.city,
+      `scene=${!!game.scene} renderer=${!!game.renderer}`);
+  } catch (e) { check('boot', false, e.message); }
+
+  try {
+    // 2. City: 6x6 blocks of colliders, 7 road lines each way.
+    const blocks = game.city.colliders.length;
+    check('city', blocks >= 50 && game.city.roadLines.length === 7,
+      `colliders=${blocks} roadLines=${game.city.roadLines.length}`);
+  } catch (e) { check('city', false, e.message); }
+
+  try {
+    // 3. Player spawns on foot near Rosa's Garage, full health.
+    const d = dist2d(game.player.x, game.player.z, HUB.x, HUB.z);
+    check('spawn', !game.player.vehicle && d < 20 && game.player.health === 100,
+      `distToHub=${d.toFixed(1)}m health=${game.player.health}`);
+  } catch (e) { check('spawn', false, e.message); }
+
+  try {
+    // 4. Traffic: exactly 12 cars, on the roads.
+    const roads = game.city.roadLines;
+    const near = (v) => roads.some((r) => Math.abs(v.x - r) < 10 || Math.abs(v.z - r) < 10);
+    const onRoad = game.traffic.filter(near).length;
+    check('traffic', game.traffic.length === TRAFFIC_COUNT && onRoad >= 10,
+      `cars=${game.traffic.length} onRoad=${onRoad}/12`);
+  } catch (e) { check('traffic', false, e.message); }
+
+  try {
+    // 5. Pedestrians: exactly 16, alive.
+    const alive = game.peds.filter((p) => p.state !== 'dead').length;
+    check('peds', game.peds.length === PED_COUNT && alive === PED_COUNT,
+      `peds=${game.peds.length} alive=${alive}`);
+  } catch (e) { check('peds', false, e.message); }
+
+  try {
+    // 6. Steal: stand by a traffic car, press E, end up driving it.
+    const car = game.traffic[0];
+    game.player.x = car.x + 2; game.player.z = car.z + 2;
+    game.player.sync();
+    pressKey('KeyE');
+    await stepFor(game, 0.5);
+    check('enter-car', game.player.vehicle === car, `driving=${!!game.player.vehicle}`);
+  } catch (e) { check('enter-car', false, e.message); }
+
+  try {
+    // 7. Drive: hold W and POLL until the car has moved > 5 m (max 12 s wall).
+    const v = game.player.vehicle;
+    const sx = v.x; const sz = v.z;
+    game.input.virtual = { up: true };
+    let moved = 0;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 12000) {
+      await stepFor(game, 0.25);
+      moved = dist2d(sx, sz, v.x, v.z);
+      if (moved > 5) break;
     }
-    if (car) {
-      G.player.pos.set(car.pos.x + 2, 0, car.pos.z);
-      G.tryEnterCar();
+    game.input.virtual = null;
+    check('drive', moved > 5, `moved=${moved.toFixed(1)}m in ${((Date.now() - t0) / 1000).toFixed(1)}s speed=${v.speed.toFixed(1)}m/s`);
+  } catch (e) { game.input.virtual = null; check('drive', false, e.message); }
+
+  try {
+    // 8. Wanted: stealing raised the heat; cruisers arrive to chase.
+    await stepFor(game, 2);
+    check('wanted', game.wanted.level >= 1 && game.wanted.policeCars.length >= 1,
+      `stars=${game.wanted.level} cruisers=${game.wanted.policeCars.length}`);
+  } catch (e) { check('wanted', false, e.message); }
+
+  try {
+    // 9. Mission: Rosa's first job starts, and driving the stolen car to the
+    // garage completes it.
+    game.talkToRosa();
+    const started = game.missions.active && game.missions.step;
+    const v = game.player.vehicle;
+    v.x = HUB.x + 3; v.z = HUB.z + 3; v.speed = 0; v.sync();
+    await stepFor(game, 1);
+    check('mission', started && game.missions.completedCount === 1,
+      `started=${!!started} done=${game.missions.completedCount}`);
+  } catch (e) { check('mission', false, e.message); }
+
+  try {
+    // 10. Combat: step out, put a pedestrian in front of you, punch them.
+    pressKey('KeyE');
+    await stepFor(game, 0.5);
+    const ped = game.peds.find((p) => p.state !== 'dead');
+    const f = game.player.forward();
+    ped.x = game.player.x + f.x * 1.5;
+    ped.z = game.player.z + f.z * 1.5;
+    ped.sync();
+    const hpBefore = ped.health;
+    pressKey('Space');
+    await stepFor(game, 0.6);
+    check('combat', ped.health < hpBefore || ped.state === 'dead',
+      `hp ${hpBefore} -> ${ped.health} state=${ped.state}`);
+  } catch (e) { check('combat', false, e.message); }
+
+  try {
+    // 11. Save: money survives a round trip through localStorage.
+    game.player.money = 1234;
+    saveGame(game);
+    const back = loadGame();
+    check('save', back && back.money === 1234, `loadedMoney=${back ? back.money : 'null'}`);
+  } catch (e) { check('save', false, e.message); }
+
+  try {
+    // 12. HUD: stars, cash, health, minimap all present; the minimap has ink.
+    game.hud.update(game, 0);
+    const map = game.hud.el.map;
+    const ctx = map.getContext('2d');
+    const data = ctx.getImageData(0, 0, map.width, map.height).data;
+    let varied = 0;
+    for (let i = 0; i < data.length; i += 401 * 4) {
+      if (data[i] !== 16 || data[i + 1] !== 16) varied += 1;
     }
-    log('steal-car', !G.player.onFoot && G.player.car === car, car ? `entered car #${car.id}` : 'no car found');
-    // 4. drive: hold W for 2 seconds, the car must actually move
-    const x0 = G.player.pos.x, z0 = G.player.pos.z;
-    G.input.up = true;
-    await sleep(2000);
-    G.input.up = false;
-    const moved = Math.hypot(G.player.pos.x - x0, G.player.pos.z - z0);
-    log('drive', moved > 5, `moved ${moved.toFixed(1)}m`);
-    // 5. wanted: a crime raises stars and the PD answers
-    addHeat(G, 2, 'selftest');
-    await sleep(600);
-    log('wanted', G.wanted.level >= 2, `level=${G.wanted.level}`);
-    log('police-respond', G.wanted.police.length >= 1, `${G.wanted.police.length} cruisers`);
-    // 6. mission: teleport the car onto mission 1's target and let it complete
-    G.exitCar();
-    if (G.missions.state !== 'active') startMission(G, 0);
-    G.player.pos.set(236, 0, 60);
-    const cashBefore = G.player.cash;
-    const missionBefore = G.missions.index;
-    // mission 1 needs the player IN a car at the target: re-enter the nearest car
-    let car2 = null; let b2 = 1e9;
-    for (const c of G.cars) {
-      if (c.kind !== 'traffic') continue;
-      const d = Math.hypot(c.pos.x - G.player.pos.x, c.pos.z - G.player.pos.z);
-      if (d < b2) { b2 = d; car2 = c; }
-    }
-    if (car2) {
-      G.player.pos.set(car2.pos.x + 2, 0, car2.pos.z);
-      G.tryEnterCar();
-      // carry the car to the pier
-      car2.pos.set(236, 0, 60);
-      car2.mesh.position.copy(car2.pos);
-      G.player.pos.copy(car2.pos);
-    }
-    await sleep(400);
-    log('mission-complete', G.missions.index === missionBefore + 1, `mission ${missionBefore + 1} -> ${G.missions.index + 1}`);
-    log('mission-reward', G.player.cash >= cashBefore + 200, `$${cashBefore} -> $${G.player.cash}`);
-    // 7. save/load round-trip through localStorage
-    saveGame(G);
-    const loaded = loadSave();
-    log('save-load', !!loaded && loaded.cash === G.player.cash, loaded ? `cash $${loaded.cash}` : 'no save found');
-    // 8. shooting: a ped in front of the camera takes damage, ammo drops
-    G.exitCar();
-    const ped = spawnPed(G.scene, G.player.pos.x + 6, G.player.pos.z, Math.random);
-    ped.hp = 50;
-    G.peds.push(ped);
-    G.camera.position.set(G.player.pos.x, 1.7, G.player.pos.z);
-    G.camera.lookAt(ped.pos.x, 1.2, ped.pos.z);
-    const ammoBefore = G.combat.ammo;
-    const hpBefore = ped.hp;
-    fireWeapon(G, [ped]);
-    await sleep(120);
-    log('shoot', G.combat.ammo === ammoBefore - 1 && ped.hp < hpBefore, `ammo ${ammoBefore}->${G.combat.ammo}, ped hp ${hpBefore}->${ped.hp}`);
-    // 9. minimap: the canvas actually draws (not a blank rect)
-    const cv = G.hud.el.minimap;
-    const ctx = cv.getContext('2d');
-    const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
-    let nonBg = 0;
-    for (let i = 0; i < data.length; i += 400) {
-      if (data[i] !== 32 || data[i + 1] !== 38 || data[i + 2] !== 44) nonBg++;
-    }
-    log('minimap', nonBg > 5, `${nonBg} non-background samples`);
-    // 10. exit car works on foot again
-    log('exit-car', G.player.onFoot === true, 'onFoot=' + G.player.onFoot);
-  } catch (e) {
-    log('exception', false, String(e && e.message || e));
-  }
-  const passed = results.filter((r) => r.ok).length;
-  const total = results.length;
-  document.title = `SELFTEST: ${passed}/${total} ${passed === total ? 'PASS' : 'FAIL'}`;
-  window.__selftestDone = true;
-  window.__selftestResults = results;
-  if (el) {
-    const sum = document.createElement('div');
-    sum.textContent = `SELFTEST: ${passed}/${total} ${passed === total ? 'PASS' : 'FAIL'}`;
-    sum.style.fontWeight = 'bold';
-    el.appendChild(sum);
-  }
+    check('hud', game.hud.el.stars && game.hud.el.cash && game.hud.el.health && varied > 3,
+      `minimapVariedSamples=${varied}`);
+  } catch (e) { check('hud', false, e.message); }
+
+  const passed = checks.filter((c) => c.ok).length;
+  const failed = checks.length - passed;
+  window.__selftest = { passed, failed, total: checks.length, checks };
+  document.title = `SELFTEST ${passed}/${checks.length}`;
+  console.log(`SELFTEST DONE ${passed}/${checks.length}`);
+  // One real frame so a screenshot of the tested state is possible.
+  try { game.paint(); } catch { /* ignore */ }
 }

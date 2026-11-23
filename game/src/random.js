@@ -1,4 +1,5 @@
 // Seeded RNG (mulberry32) so ?seed=N replays the same city, traffic and crowds.
+// Re-authored in-session (round 3, fresh recording).
 export function mulberry32(seed) {
   let a = seed >>> 0;
   return function next() {

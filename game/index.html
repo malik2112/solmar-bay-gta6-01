@@ -1,93 +1,77 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SOLMAR BAY — open-world crime game</title>
+<title>SOLMAR BAY — Open-World Crime Game</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #2e2450; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  #hud { position: fixed; inset: 0; pointer-events: none; color: #eef1f5; }
-  #top-right { position: absolute; top: 14px; right: 16px; text-align: right; text-shadow: 0 1px 4px #000; }
-  #stars { font-size: 30px; letter-spacing: 4px; }
-  #stars.flash { animation: blink 0.5s steps(2) infinite; }
-  @keyframes blink { 50% { opacity: 0.25; } }
-  #cash { font-size: 26px; font-weight: 700; color: #7fe0a0; }
-  #health-wrap { margin-top: 6px; width: 200px; height: 12px; background: rgba(0,0,0,0.55); border: 1px solid #666; border-radius: 6px; overflow: hidden; margin-left: auto; }
-  #health-fill { height: 100%; width: 100%; background: #3aa655; }
-  #health-text { font-size: 12px; color: #c8ccd8; }
-  #speed { position: absolute; right: 16px; bottom: 16px; font-size: 30px; font-weight: 800; text-shadow: 0 2px 6px #000; }
-  #mission { position: absolute; top: 14px; left: 16px; max-width: 430px; background: rgba(10,10,20,0.62); border-left: 4px solid #ffd23e; padding: 10px 14px; border-radius: 4px; }
-  #mission h2 { margin: 0 0 4px; font-size: 15px; color: #ffd23e; letter-spacing: 1px; }
-  #brief-text { font-size: 14px; line-height: 1.45; }
-  #mission-timer { font-size: 15px; font-weight: 700; color: #ff9a5a; margin-top: 4px; }
-  #minimap { position: absolute; left: 16px; bottom: 16px; width: 180px; height: 180px; border: 2px solid rgba(255,255,255,0.35); border-radius: 6px; background: #101018; }
-  #toast { position: absolute; left: 50%; bottom: 110px; transform: translateX(-50%); background: rgba(10,10,20,0.75); padding: 10px 18px; border-radius: 6px; font-size: 15px; opacity: 0; transition: opacity 0.3s; max-width: 70%; text-align: center; }
-  #controls-hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); font-size: 12px; color: #c8ccd8; text-shadow: 0 1px 3px #000; }
-  .screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; color: #eef1f5; background: linear-gradient(180deg, rgba(20,12,40,0.82), rgba(46,36,80,0.88)); z-index: 10; }
-  .screen h1 { font-size: 64px; margin: 0; letter-spacing: 6px; color: #ffd23e; text-shadow: 0 4px 24px rgba(255,150,60,0.6); }
-  .screen h2 { font-size: 20px; margin: 6px 0 18px; font-weight: 400; color: #ffb36b; letter-spacing: 3px; }
-  .screen p { max-width: 560px; line-height: 1.6; font-size: 15px; color: #d8dce8; }
-  .screen button { pointer-events: auto; margin-top: 18px; font-size: 18px; font-weight: 700; padding: 12px 34px; border: none; border-radius: 8px; background: #ffd23e; color: #241a10; cursor: pointer; }
-  .screen button:hover { background: #ffe14d; }
-  .screen button.secondary { background: #3a3a4a; color: #eef1f5; }
-  #save-note { margin-top: 14px; font-size: 13px; color: #9fd8ff; }
-  .keys { font-size: 13px; color: #b8bcd0; line-height: 1.9; margin-top: 10px; }
-  .keys b { color: #fff; background: rgba(255,255,255,0.15); padding: 1px 7px; border-radius: 4px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0c1c26;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: #fff; }
+  #app, #app canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  .hidden { display: none !important; }
+  .panel { pointer-events: auto; }
+  #menu { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px; padding: 24px; text-align: center;
+    background: linear-gradient(180deg, rgba(6,20,30,.82), rgba(6,20,30,.55) 45%, rgba(6,20,30,.85)); }
+  #menu h1 { font-size: 64px; letter-spacing: 10px; color: #ffd84d;
+    text-shadow: 0 4px 0 #b3541e, 0 8px 24px rgba(0,0,0,.6); }
+  #menu .tag { font-size: 17px; color: #bfe3ff; letter-spacing: 1px; }
+  #menu .story { max-width: 640px; font-size: 15px; line-height: 1.55; color: #e8eef2; }
+  #menu .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; max-width: 640px;
+    font-size: 13px; color: #cfe3ef; text-align: left; background: rgba(0,0,0,.35);
+    padding: 12px 18px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18); }
+  #menu button { pointer-events: auto; cursor: pointer; font-size: 18px; font-weight: 700;
+    letter-spacing: 1px; color: #14202a; background: #ffd84d; border: none; border-radius: 10px;
+    padding: 14px 34px; box-shadow: 0 4px 0 #b3541e; }
+  #menu button:active { transform: translateY(3px); box-shadow: none; }
+  #menu button.ghost { background: transparent; color: #ffd84d; border: 2px solid #ffd84d; box-shadow: none; }
+  #menu .fine { font-size: 12px; color: #9fb6c4; }
+  #topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between;
+    align-items: flex-start; padding: 14px 18px; gap: 16px; }
+  #missionBox { background: rgba(6,20,30,.72); border: 1px solid rgba(255,255,255,.25); border-radius: 10px;
+    padding: 10px 14px; max-width: 520px; }
+  #missionBox b { display: block; font-size: 14px; color: #ffd84d; letter-spacing: .5px; }
+  #missionBox span { font-size: 13px; line-height: 1.4; color: #e8eef2; }
+  #rightBox { text-align: right; background: rgba(6,20,30,.72); border: 1px solid rgba(255,255,255,.25);
+    border-radius: 10px; padding: 10px 14px; }
+  #stars { font-size: 22px; letter-spacing: 3px; color: #fff; }
+  #cash { font-size: 22px; font-weight: 800; color: #7dff9b; }
+  #bottombar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between;
+    align-items: flex-end; padding: 14px 18px; gap: 16px; }
+  #vitals { display: flex; flex-direction: column; gap: 8px; width: 300px; }
+  .bar { position: relative; height: 22px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.35);
+    border-radius: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; background: #37c978; }
+  .bar span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; letter-spacing: 2px; }
+  #carBox { display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: rgba(6,20,30,.72); border: 1px solid rgba(255,255,255,.25); border-radius: 10px; padding: 8px 18px; }
+  #speedText { font-size: 26px; font-weight: 800; }
+  #radioText { font-size: 12px; color: #bfe3ff; }
+  #minimap { border: 2px solid rgba(255,255,255,.7); border-radius: 8px; background: #0c1c26;
+    box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+  #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    font-size: 26px; font-weight: 700; color: rgba(255,255,255,.9); text-shadow: 0 0 6px #000; }
+  #toast { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); background: rgba(6,20,30,.85);
+    border: 1px solid #ffd84d; color: #ffe9a8; padding: 10px 18px; border-radius: 10px; font-size: 15px;
+    opacity: 0; transition: opacity .25s; max-width: 640px; text-align: center; }
+  #toast.show { opacity: 1; }
+  #hint { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); background: rgba(0,0,0,.7);
+    padding: 8px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .25s; }
+  #hint.show { opacity: 1; }
+  #centerMsg { position: absolute; left: 50%; top: 38%; transform: translate(-50%,-50%); font-size: 34px;
+    font-weight: 900; letter-spacing: 2px; color: #ffd84d; text-align: center;
+    text-shadow: 0 3px 0 #000, 0 6px 24px rgba(0,0,0,.8); max-width: 80%; }
 </style>
 <script type="importmap">
-  { "imports": { "three": "./vendor/three/three.module.min.js" } }
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
 </script>
 </head>
 <body>
-<canvas id="game" aria-label="SOLMAR BAY: an open-world crime game. Drive, steal cars, take jobs from Rosa Delgado, and lose the cops."></canvas>
-<p id="status" role="status" aria-live="polite"></p>
-<div id="hud">
-  <div id="mission"><h2 id="mission-title">ROSA DELGADO</h2><div id="brief-text"></div><div id="mission-timer"></div></div>
-  <div id="top-right">
-    <div id="stars">☆☆☆☆☆</div>
-    <div id="cash">$0</div>
-    <div id="health-wrap"><div id="health-fill"></div></div>
-    <div id="health-text">100 HP</div>
-  </div>
-  <canvas id="minimap" width="180" height="180"></canvas>
-  <div id="speed">ON FOOT</div>
-  <div id="toast"></div>
-  <div id="controls-hint">WASD move / drive &nbsp;·&nbsp; E steal car &nbsp;·&nbsp; Space punch &nbsp;·&nbsp; F shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; M job &nbsp;·&nbsp; Q radio &nbsp;·&nbsp; drag mouse to look</div>
-</div>
-
-<div class="screen" id="title-screen" style="display:flex">
-  <h1>SOLMAR BAY</h1>
-  <h2>CITY OF THE SETTING SUN</h2>
-  <p>You are new in Solmar Bay, a coastal city where the sun never quite sets and
-  everyone owes someone. Fixer <b>Rosa Delgado</b> runs the garage on the bayfront —
-  she has five jobs for a driver with no past and fast hands. Steal a car, take the
-  work, and do not let the Solmar Bay PD catch you doing it.</p>
-  <button id="start-btn">START — NEW GAME</button>
-  <button id="continue-btn" class="secondary" style="display:none">CONTINUE SAVED GAME</button>
-  <div id="save-note"></div>
-  <div class="keys"><b>W A S D</b> move / drive &nbsp; <b>E</b> steal &amp; exit car &nbsp; <b>Space</b> punch &nbsp; <b>F</b> shoot &nbsp; <b>R</b> reload &nbsp; <b>M</b> talk to Rosa &nbsp; <b>Q</b> radio &nbsp; <b>Esc</b> pause</div>
-</div>
-
-<div class="screen" id="pause-screen">
-  <h1>PAUSED</h1>
-  <p>Progress saved. The bay waits.</p>
-  <button id="resume-btn">RESUME</button>
-</div>
-
-<div class="screen" id="wasted-screen">
-  <h1>WASTED</h1>
-  <p>Rosa patched you up outside the garage. The city keeps your money where you dropped it — well, most of it.</p>
-  <button id="retry-btn">GET UP</button>
-</div>
-
-<div class="screen" id="busted-screen">
-  <h1>BUSTED</h1>
-  <p>The Solmar Bay PD impounded your ride and fined you $150. Rosa is already working on the paperwork.</p>
-  <button id="busted-btn">WALK OUT</button>
-</div>
-
+<div id="app"></div>
+<div id="hud"></div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

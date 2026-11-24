@@ -1,59 +1,54 @@
-# SOLMAR BAY — an open-world crime game
+# SOLMAR BAY — Make GTA 6 (make.fun gta6-01)
 
-[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![rank](https://make.fun/badge/gta6-01/malik2112/solmar-bay-gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![reward](https://make.fun/badge/gta6-01/malik2112/solmar-bay-gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+A complete open-world crime game that runs offline in a desktop browser from
+static files. Built from scratch with Three.js (vendored under `game/vendor/`).
 
-An original open-world crime game for [make.fun's **gta6-01** bounty](https://make.fun/bounty/gta6-01), built as
-plain static files that play offline in a desktop browser. No network, no
-build step: open `game/index.html` (or `node serve.ts` and visit
-http://localhost:8080). Re-authored in-session for the fresh recording (round 3).
+## Play
+
+```sh
+node serve.ts        # then open http://127.0.0.1:8901/game/index.html
+```
+
+Or open `game/index.html` directly from any static file server.
 
 ## The game
 
-You are **Jax Marlowe**, a wheelman new to **Solmar Bay**, a sun-soaked
-coastal city of your own — no part of any commercial game is used: the city,
-people, cars, story and music are all original.
+You are Vic, fresh out of the marina lockup with $120 and a borrowed pistol.
+Mara and Dario have five jobs for you across Solmar Bay, a sun-soaked coastal
+city: steal cars, run beachfront pickups, dodge the Solmar Bay PD, and bring
+the final gold coupe home.
 
-- **Open city**: a 6×6-block grid with a beach, boardwalk piers, a hotel
-  tower and Rosa Delgado's garage — explore on foot or by car.
-- **Drive & steal**: traffic cruises the roads; walk up to any car and press
-  **E** to take it. Arcade handling, handbrake slides, crash damage.
-- **Wanted system**: steal, hit pedestrians or shoot and the stars rise;
-  Solmar Bay PD cruisers chase, ram and try to bust you. Lay low and the
-  heat cools off.
-- **Story**: five jobs for fixer Rosa Delgado — an errand, a stolen coupe, a
-  hot pursuit, a package run against the clock, and the big vault job.
-- **Combat**: pistol with tracers, reloads and rival crew that shoots back.
-- **HUD**: cash, health, wanted stars, live minimap, mission objective,
-  speed, ammo, in-game clock, and a synth radio (WebAudio, generated live).
-- **Save**: progress saves to localStorage; Continue resumes at the garage.
+- **City** — a 9×9 road grid with procedural towers, beachfront, ocean, palms,
+  streetlights and drifting clouds
+- **Driving** — steal any parked car (E), arcade handling, handbrake, traffic
+- **On foot** — third-person walking and sprinting, mouse-look camera
+- **Combat** — hitscan pistol with tracers and muzzle flash, reload, ammo
+- **Wanted** — 0–5 star heat, police cruisers that chase and ram, busted/wasted
+- **Missions** — 5 story jobs with beacon markers, HUD tracking and cash rewards
+- **HUD** — health/ammo bars, wanted stars, cash, radio station, live minimap
+- **Sound** — synthesized WebAudio: engine hum, three radio stations, sirens
+- **Save** — progress autosaves to localStorage; continue from the menu
 
 ## Controls
 
-WASD move / drive · mouse look (click to lock) · Shift sprint · E enter/exit
-car · Space handbrake · click fire · R reload · M mission details · H radio ·
-P / Esc pause.
+WASD move / drive · Shift sprint · E enter/exit car · Mouse aim, Click shoot ·
+R reload · Q radio · Space handbrake · P pause · M mute
 
-## Files
+## Self test & screenshots
 
-- `game/index.html` — the page, HUD and menus
-- `game/src/main.js` — boot, game loop, input, car enter/exit, flows
-- `game/src/config.js` — tuning, palette, story text
-- `game/src/city.js` — procedural city, collisions, road graph
-- `game/src/vehicles.js` — car meshes, driving physics, traffic + police AI
-- `game/src/pedestrians.js` — walkers, fleeing, fallen
-- `game/src/player.js` — on-foot movement + third-person camera
-- `game/src/combat.js` — pistol, tracers, rivals
-- `game/src/wanted.js` — wanted level, police dispatch, busted
-- `game/src/missions.js` — the five-job story
-- `game/src/hud.js` — HUD + live minimap
-- `game/src/save.js` — localStorage save/load
-- `game/src/audio.js` — synthesised sound + radio (WebAudio, no files)
-- `game/src/shots.js` — staged scenes for the screenshots (`?shot=`)
-- `game/src/selftest.js` — headless play-through checks (`?selftest=1`)
-- `game/vendor/three/three.module.min.js` — three.js (MIT), vendored
+- `?selftest=1` runs the in-browser self test and reports PASS/FAIL.
+- `?shot=drive|street|mission|start` stages a composed scene for screenshots
+  (see `shots.json`); the page sets `window.__shotReady` once settled.
+
+## Build the dossier
+
+```sh
+MAKEFUN_OUTPUT_DIR=/tmp/solmar-out2 node main.ts
+```
+
+This copies `game/` and `screenshots/` to the output directory and writes
+`dossier.json` (makefun/dossier/v1) with the kit library in `vendor/`.
 
 ## License
 
-MIT — see LICENSE.
+MIT — see `LICENSE`. All art, names, story and sound in this game are original.

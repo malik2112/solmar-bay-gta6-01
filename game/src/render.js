@@ -1,73 +1,70 @@
-// Renderer + chase camera. Third-person follow with a mouse-drag orbit offset
-// and wheel zoom; the camera eases behind the player or the car.
-import * as THREE from 'three';
-import { clamp, lerp } from './config.js';
+// SOLMAR BAY — renderer, chase cameras and the sun. One WebGLRenderer,
+// antialiased, capped at the display's pixel ratio for speed.
 
-export function createRenderer(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+import * as THREE from 'three';
+
+export function createRenderer(host) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  host.appendChild(renderer.domElement);
+
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.5, 2000);
-  camera.position.set(0, 30, 60);
+  const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 1600);
+  camera.position.set(0, 8, 20);
+
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
-  return { renderer, scene, camera };
-}
 
-export class CameraRig {
-  constructor(camera) {
-    this.camera = camera;
-    this.yawOffset = 0;
-    this.pitchOffset = 0;
-    this.distance = 12;
-    this.pos = new THREE.Vector3(0, 30, 60);
-    this.look = new THREE.Vector3(0, 2, 0);
-  }
-  applyDrag(dx, dy, wheel) {
-    this.yawOffset -= dx * 0.005;
-    this.pitchOffset = clamp(this.pitchOffset + dy * 0.003, -0.35, 0.5);
-    if (wheel) this.distance = clamp(this.distance + Math.sign(wheel) * 1.5, 7, 20);
-  }
-  // Follow the player (or their car). `yaw` is the heading the camera trails.
-  follow(dt, x, z, heading, driving, speed) {
-    const yaw = heading + Math.PI + this.yawOffset;
-    const dist = driving ? this.distance + 2 : this.distance;
-    const height = driving ? 6.5 + this.pitchOffset * 8 : 4.6 + this.pitchOffset * 8;
-    const tx = x + Math.sin(yaw) * dist;
-    const tz = z + Math.cos(yaw) * dist;
-    const k = 1 - Math.exp(-dt * (driving ? 5 : 7));
-    this.pos.x = lerp(this.pos.x, tx, k);
-    this.pos.y = lerp(this.pos.y, height, k);
-    this.pos.z = lerp(this.pos.z, tz, k);
-    const lx = x + Math.sin(heading) * (driving ? 6 : 3);
-    const lz = z + Math.cos(heading) * (driving ? 6 : 3);
-    this.look.x = lerp(this.look.x, lx, k);
-    this.look.y = lerp(this.look.y, 1.8, k);
-    this.look.z = lerp(this.look.z, lz, k);
-    this.camera.position.copy(this.pos);
-    this.camera.lookAt(this.look);
-  }
-  // Same framing as follow(), but snapped in one jump: staged screenshots
-  // paint only a few frames, so an eased camera would never arrive.
-  snapFollow(x, z, heading, driving) {
-    const yaw = heading + Math.PI + this.yawOffset;
-    const dist = driving ? this.distance + 2 : this.distance;
-    const height = driving ? 6.5 + this.pitchOffset * 8 : 4.6 + this.pitchOffset * 8;
-    this.pos.set(x + Math.sin(yaw) * dist, height, z + Math.cos(yaw) * dist);
-    this.look.set(x + Math.sin(heading) * (driving ? 6 : 3), 1.8, z + Math.cos(heading) * (driving ? 6 : 3));
-    this.camera.position.copy(this.pos);
-    this.camera.lookAt(this.look);
-  }
-  // Fixed cinematic framing for the title / staged shots.
-  setShot(x, y, z, lx, ly, lz) {
-    this.pos.set(x, y, z);
-    this.look.set(lx, ly, lz);
-    this.camera.position.copy(this.pos);
-    this.camera.lookAt(this.look);
-  }
+  const cam = { x: 0, y: 10, z: 24, lookX: 0, lookY: 1.5, lookZ: 0 };
+
+  return {
+    renderer,
+    scene,
+    camera,
+    domElement: renderer.domElement,
+    // Smooth third-person chase camera. On foot it sits behind the camera yaw;
+    // in a car it sits behind the car's heading, further back and lower.
+    updateCamera(dt, player) {
+      let yaw;
+      let dist;
+      let height;
+      let lookAhead;
+      if (player.inCar) {
+        yaw = player.inCar.heading;
+        dist = 13.5;
+        height = 5.2;
+        lookAhead = 7;
+      } else {
+        yaw = player.camYaw;
+        dist = 8.5;
+        height = 3.4;
+        lookAhead = 4;
+      }
+      const tx = player.inCar ? player.inCar.x : player.x;
+      const tz = player.inCar ? player.inCar.z : player.z;
+      const wantX = tx + Math.sin(yaw) * dist;
+      const wantZ = tz + Math.cos(yaw) * dist;
+      const k = Math.min(1, dt * 6);
+      cam.x += (wantX - cam.x) * k;
+      cam.z += (wantZ - cam.z) * k;
+      cam.y += (height - cam.y) * Math.min(1, dt * 5);
+      cam.lookX = tx - Math.sin(yaw) * lookAhead;
+      cam.lookZ = tz - Math.cos(yaw) * lookAhead;
+      cam.lookY = 1.6;
+      camera.position.set(cam.x, cam.y, cam.z);
+      camera.lookAt(cam.lookX, cam.lookY, cam.lookZ);
+    },
+    render() {
+      renderer.render(scene, camera);
+    },
+  };
 }

@@ -1,92 +1,81 @@
-// Combat: fists (Space) and a pistol (F / click). Hitscan shooting with a
-// fading tracer; cops shoot back when close. Hurting people raises the heat.
-import * as THREE from 'three';
-import { PLAYER, WANTED } from './config.js';
+// SOLMAR BAY — combat: a hitscan pistol with tracers, muzzle flash, reload,
+// and the consequences (noise scares peds, hurting people raises heat).
 
-export class Combat {
-  constructor(scene) {
-    this.scene = scene;
-    this.ammo = 12;
-    this.ammoMax = 12;
-    this.reloadTimer = 0;
-    this.punchTimer = 0;
-    this.tracer = null;
-    this.tracerTimer = 0;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
-    this.tracer = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0 }));
-    this.scene.add(this.tracer);
+import * as THREE from 'three';
+import { CONFIG } from './config.js';
+import { clamp } from './random.js';
+
+export function createCombat(scene, camera) {
+  const tracers = [];
+  const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe14d });
+  const flashLight = new THREE.PointLight(0xffcc66, 0, 14);
+  scene.add(flashLight);
+  let flashUntil = 0;
+  let cooldown = 0;
+
+  function spawnTracer(from, to) {
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length();
+    const geo = new THREE.CylinderGeometry(0.03, 0.03, len, 5);
+    const mesh = new THREE.Mesh(geo, tracerMat);
+    mesh.position.copy(from).addScaledVector(dir, 0.5);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    scene.add(mesh);
+    tracers.push({ mesh, ttl: 0.09 });
   }
-  get reloading() { return this.reloadTimer > 0; }
-  reload() {
-    if (this.reloadTimer <= 0 && this.ammo < this.ammoMax) this.reloadTimer = 1.1;
-  }
-  update(dt) {
-    if (this.reloadTimer > 0) {
-      this.reloadTimer -= dt;
-      if (this.reloadTimer <= 0) this.ammo = this.ammoMax;
-    }
-    if (this.punchTimer > 0) this.punchTimer -= dt;
-    if (this.tracerTimer > 0) {
-      this.tracerTimer -= dt;
-      this.tracer.material.opacity = Math.max(0, this.tracerTimer * 4);
-    }
-  }
-  // Punch: anything living within range and in front of the player.
-  punch(player, targets, events, onCrime) {
-    if (this.punchTimer > 0) return;
-    this.punchTimer = 0.45;
-    const f = player.forward();
-    for (const t of targets) {
-      if (t.state === 'dead') continue;
-      const dx = t.x - player.x;
-      const dz = t.z - player.z;
-      const d = Math.hypot(dx, dz);
-      if (d > PLAYER.punchRange || d < 0.01) continue;
-      const dot = (dx * f.x + dz * f.z) / d;
-      if (dot < 0.35) continue;
-      const killed = t.damage(PLAYER.punchDmg, player.x, player.z);
-      onCrime(killed ? WANTED.killHeat : WANTED.assaultHeat);
-      events.push(killed ? 'Pedestrian down. The city saw that.' : 'You land a punch.');
-      return;
-    }
-  }
-  // Hitscan shot: nearest living target within 40 m and a narrow cone of aim.
-  shoot(player, targets, events, onCrime, audio) {
-    if (this.reloadTimer > 0 || this.ammo <= 0) {
-      if (this.ammo <= 0) this.reload();
-      return;
-    }
-    this.ammo -= 1;
-    const f = player.forward();
-    const ox = player.x;
-    const oz = player.z;
-    const oy = 1.5;
-    let best = null;
-    let bestD = 42;
-    for (const t of targets) {
-      if (t.state === 'dead') continue;
-      const dx = t.x - ox;
-      const dz = t.z - oz;
-      const d = Math.hypot(dx, dz);
-      if (d > bestD || d < 0.01) continue;
-      const dot = (dx * f.x + dz * f.z) / d;
-      if (dot < 0.92) continue;
-      best = t; bestD = d;
-    }
-    const ex = ox + f.x * (best ? bestD : 40);
-    const ez = oz + f.z * (best ? bestD : 40);
-    const pos = this.tracer.geometry.attributes.position;
-    pos.setXYZ(0, ox, oy, oz);
-    pos.setXYZ(1, ex, 1.2, ez);
-    pos.needsUpdate = true;
-    this.tracer.material.opacity = 0.9;
-    this.tracerTimer = 0.12;
-    if (audio) audio.shot();
-    if (best) {
-      const killed = best.damage(34, ox, oz);
-      onCrime(killed ? WANTED.killHeat : WANTED.assaultHeat);
-      events.push(killed ? 'Target down.' : 'Hit!');
-    }
-  }
+
+  return {
+    // Returns 'hit' | 'miss' | 'empty' | 'cooldown'.
+    tryShoot(player, raycaster, targets, audio, onHit) {
+      if (cooldown > 0) return 'cooldown';
+      if (player.ammo <= 0) {
+        if (audio) audio.error();
+        return 'empty';
+      }
+      cooldown = 0.22;
+      player.ammo -= 1;
+      if (audio) audio.shoot();
+      const now = performance.now() / 1000;
+      flashUntil = now + 0.06;
+      const origin = new THREE.Vector3(player.x, 1.55, player.z);
+      if (player.inCar) {
+        origin.set(player.inCar.x, 1.5, player.inCar.z);
+      }
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+      raycaster.far = 120;
+      const hits = raycaster.intersectObjects(targets, true);
+      let end;
+      if (hits.length > 0) {
+        end = hits[0].point.clone();
+        spawnTracer(origin, end);
+        if (onHit) onHit(hits[0]);
+        return 'hit';
+      }
+      end = raycaster.ray.at(90, new THREE.Vector3());
+      spawnTracer(origin, end);
+      return 'miss';
+    },
+    reload(player, audio) {
+      if (player.ammo >= CONFIG.pistolAmmo || player.ammoReserve <= 0) return false;
+      const need = CONFIG.pistolAmmo - player.ammo;
+      const take = Math.min(need, player.ammoReserve);
+      player.ammo += take;
+      player.ammoReserve -= take;
+      if (audio) audio.reload();
+      return true;
+    },
+    update(dt, t) {
+      cooldown = Math.max(0, cooldown - dt);
+      flashLight.intensity = t < flashUntil ? 60 : 0;
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        tracers[i].ttl -= dt;
+        if (tracers[i].ttl <= 0) {
+          scene.remove(tracers[i].mesh);
+          tracers[i].mesh.geometry.dispose();
+          tracers.splice(i, 1);
+        }
+      }
+      void clamp;
+    },
+  };
 }

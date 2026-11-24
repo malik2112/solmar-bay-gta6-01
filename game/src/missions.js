@@ -1,103 +1,116 @@
-// Five jobs from Rosa Delgado, the fixer at Rosa's Garage.
-// Each mission is a chain of "reach the marker" steps; finishing one pays cash
-// and unlocks the next. A beacon marks the current objective in the world.
-import * as THREE from 'three';
-import { MISSIONS, dist2d } from './config.js';
+// SOLMAR BAY — five story missions, chained in order, with a 3D beacon over
+// the current objective and a step machine the main loop drives.
 
-export class MissionManager {
-  constructor(scene) {
-    this.scene = scene;
-    this.index = 0; // next mission to play
-    this.state = 'idle'; // idle | active | done
-    this.stepIndex = 0;
-    this.timer = 0;
-    this.beacon = null;
-    this.completedCount = 0;
-    this.failed = false;
-  }
-  get current() { return MISSIONS[this.index] ?? null; }
-  get step() {
-    const m = this.current;
-    return m ? m.steps[this.stepIndex] : null;
-  }
-  get active() { return this.state === 'active'; }
-  start() {
-    if (!this.current || this.state === 'active') return false;
-    this.state = 'active';
-    this.stepIndex = 0;
-    this.timer = this.current.timeLimit ?? 0;
-    this.failed = false;
-    this.showBeacon();
-    return true;
-  }
-  showBeacon() {
-    this.hideBeacon();
-    const s = this.step;
-    if (!s) return;
-    const geo = new THREE.CylinderGeometry(2.6, 2.6, 60, 12, 1, true);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
-    this.beacon = new THREE.Mesh(geo, mat);
-    this.beacon.position.set(s.x, 30, s.z);
-    this.scene.add(this.beacon);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(3.4, 4.4, 24), new THREE.MeshBasicMaterial({ color: 0xffd23e, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(s.x, 0.12, s.z);
-    this.scene.add(ring);
-    this.beaconRing = ring;
-  }
-  hideBeacon() {
-    if (this.beacon) { this.scene.remove(this.beacon); this.beacon = null; }
-    if (this.beaconRing) { this.scene.remove(this.beaconRing); this.beaconRing = null; }
-  }
-  // Returns 'step' | 'complete' | 'failed' | null. `events` collects toasts.
-  update(dt, player, wantedLevel, events) {
-    if (this.state !== 'active') return null;
-    const m = this.current;
-    if (m.timeLimit) {
-      this.timer -= dt;
-      if (this.timer <= 0) {
-        this.state = 'idle';
-        this.failed = true;
-        this.hideBeacon();
-        events.push(`Mission failed: ${m.name} — out of time. Talk to Rosa to retry.`);
-        return 'failed';
-      }
-    }
-    const s = this.step;
-    if (!s) return null;
-    const px = player.vehicle ? player.vehicle.x : player.x;
-    const pz = player.vehicle ? player.vehicle.z : player.z;
-    if (s.needClear) {
-      if (wantedLevel === 0) return this.advance(events);
+import * as THREE from 'three';
+import { MISSIONS } from './config.js';
+import { dist2d } from './random.js';
+
+export function createMissions(scene, city) {
+  const beaconMat = new THREE.MeshBasicMaterial({
+    color: 0xffd84d,
+    transparent: true,
+    opacity: 0.45,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 42, 20, 1, true), beaconMat);
+  beacon.visible = false;
+  scene.add(beacon);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.0, 28), ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.visible = false;
+  scene.add(ring);
+
+  const missions = {
+    index: 0, // next mission to play
+    done: [],
+    active: null, // {def, step}
+    beacon,
+    ring,
+    currentDef() {
+      return MISSIONS[missions.index] || null;
+    },
+    isFinished() {
+      return missions.index >= MISSIONS.length;
+    },
+    start() {
+      const def = missions.currentDef();
+      if (!def) return null;
+      missions.active = { def, step: 0 };
+      missions.showBeacon();
+      return missions.active;
+    },
+    stepDef() {
+      if (!missions.active) return null;
+      return missions.active.def.steps[missions.active.step] || null;
+    },
+    targetPos() {
+      const s = missions.stepDef();
+      if (s && s.at) return { x: s.at[0], z: s.at[1] };
       return null;
-    }
-    if (s.needCar && !player.vehicle) return null;
-    if (dist2d(px, pz, s.x, s.z) < 7) {
-      if (m.id === 4 && this.stepIndex === 0) {
-        events.push('Bank robbed! $1,500 in the bag — now run for the garage!');
+    },
+    showBeacon() {
+      const pos = missions.targetPos();
+      if (pos) {
+        beacon.position.set(pos.x, 21, pos.z);
+        beacon.visible = true;
+        ring.position.set(pos.x, 0.15, pos.z);
+        ring.visible = true;
+      } else {
+        beacon.visible = false;
+        ring.visible = false;
       }
-      return this.advance(events);
-    }
-    return null;
-  }
-  advance(events) {
-    const m = this.current;
-    this.stepIndex += 1;
-    if (this.stepIndex >= m.steps.length) {
-      this.state = 'done';
-      this.hideBeacon();
-      this.completedCount += 1;
-      this.index += 1;
-      events.push(`Mission complete: ${m.name} — $${m.reward} earned.`);
-      return 'complete';
-    }
-    this.showBeacon();
-    events.push(this.step.label);
-    return 'step';
-  }
-  reset() {
-    this.index = 0; this.state = 'idle'; this.stepIndex = 0;
-    this.timer = 0; this.completedCount = 0; this.failed = false;
-    this.hideBeacon();
-  }
+    },
+    advance() {
+      if (!missions.active) return 'none';
+      missions.active.step += 1;
+      if (missions.active.step >= missions.active.def.steps.length) {
+        const def = missions.active.def;
+        missions.done.push(def.id);
+        missions.index += 1;
+        missions.active = null;
+        beacon.visible = false;
+        ring.visible = false;
+        return 'complete';
+      }
+      missions.showBeacon();
+      return 'step';
+    },
+    // Called every frame with the live game state; returns an event string or null.
+    update(state, dt) {
+      if (!missions.active) return null;
+      const s = missions.stepDef();
+      if (!s) return null;
+      if (dt) {
+        s.elapsed = (s.elapsed || 0) + dt;
+        // Anti-soft-lock: a chase step that never draws heat still moves on.
+        if (s.kind === 'chase' && s.elapsed > 90) return missions.advance();
+      }
+      const px = state.player.inCar ? state.player.inCar.x : state.player.x;
+      const pz = state.player.inCar ? state.player.inCar.z : state.player.z;
+      if (s.kind === 'reach') {
+        if (dist2d(px, pz, s.at[0], s.at[1]) < 7) return missions.advance();
+      } else if (s.kind === 'cooldown') {
+        if (state.wanted.stars === 0) return missions.advance();
+      } else if (s.kind === 'chase') {
+        // Step completes once the player has drawn heat and then cleared it.
+        if (state.wanted.stars >= 2) s.armed = true;
+        if (s.armed && state.wanted.stars === 0) return missions.advance();
+      }
+      // 'steal' steps advance from the car-entry event in main.js.
+      return null;
+    },
+    onCarStolen() {
+      const s = missions.stepDef();
+      if (s && s.kind === 'steal') return missions.advance();
+      return null;
+    },
+    applySave(doneList, index) {
+      missions.done = doneList.slice();
+      missions.index = index;
+      missions.active = null;
+    },
+  };
+  return missions;
 }

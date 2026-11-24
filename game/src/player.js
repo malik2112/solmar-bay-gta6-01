@@ -1,97 +1,133 @@
-// The hero on foot: WASD + Shift to run, E to steal / exit a car.
-// A low-poly figure built from boxes so the game needs no art assets.
+// SOLMAR BAY — the player on foot: a low-poly walker with a third-person
+// camera rig, sprint, and car entry/exit. Health and ammo live on the state.
+
 import * as THREE from 'three';
-import { PLAYER, clamp } from './config.js';
-import { collideCircle } from './city.js';
+import { CONFIG } from './config.js';
+import { clamp, angleLerp } from './random.js';
 
-function heroMesh() {
-  const g = new THREE.Group();
-  const jacket = new THREE.MeshLambertMaterial({ color: 0x2e6fc2 });
-  const pants = new THREE.MeshLambertMaterial({ color: 0x22242e });
-  const skin = new THREE.MeshLambertMaterial({ color: 0xd8a077 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.9, 0.38), jacket);
-  body.position.y = 1.08; g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 10, 8), skin);
-  head.position.y = 1.78; g.add(head);
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.5), new THREE.MeshLambertMaterial({ color: 0xc23b2e }));
-  cap.position.y = 2.0; g.add(cap);
-  for (const x of [-0.17, 0.17]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.66, 0.26), pants);
-    leg.position.set(x, 0.33, 0); g.add(leg);
-  }
-  for (const x of [-0.42, 0.42]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.22), jacket);
-    arm.position.set(x, 1.1, 0); g.add(arm);
-  }
-  return g;
-}
+export function createPlayer(scene, city) {
+  const group = new THREE.Group();
+  const skin = new THREE.MeshLambertMaterial({ color: 0xc98d64 });
+  const shirt = new THREE.MeshLambertMaterial({ color: 0x2e86c1 });
+  const pants = new THREE.MeshLambertMaterial({ color: 0x2c3e50 });
+  const hair = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
 
-export class Player {
-  constructor(scene, x, z) {
-    this.scene = scene;
-    this.mesh = heroMesh();
-    scene.add(this.mesh);
-    this.x = x; this.z = z;
-    this.heading = Math.PI; // face the city from the hub
-    this.health = PLAYER.health;
-    this.money = 0;
-    this.vehicle = null;
-    this.lastHurtAt = -99;
-    this.time = 0;
-    this.sync();
-  }
-  sync() {
-    this.mesh.position.set(this.x, 0, this.z);
-    this.mesh.rotation.y = this.heading;
-    this.mesh.visible = !this.vehicle;
-  }
-  forward() { return { x: Math.sin(this.heading), z: Math.cos(this.heading) }; }
-  hurt(amount, now) {
-    this.health = Math.max(0, this.health - amount);
-    this.lastHurtAt = now;
-  }
-  // On-foot step: camera-relative WASD (forward = away from camera yaw).
-  stepOnFoot(dt, keys, camYaw, colliders, half) {
-    let fx = 0;
-    let fz = 0;
-    if (keys.up) { fx += Math.sin(camYaw); fz += Math.cos(camYaw); }
-    if (keys.down) { fx -= Math.sin(camYaw); fz -= Math.cos(camYaw); }
-    if (keys.left) { fx += Math.sin(camYaw - Math.PI / 2); fz += Math.cos(camYaw - Math.PI / 2); }
-    if (keys.right) { fx += Math.sin(camYaw + Math.PI / 2); fz += Math.cos(camYaw + Math.PI / 2); }
-    const len = Math.hypot(fx, fz);
-    if (len > 0.01) {
-      const speed = keys.run ? PLAYER.run : PLAYER.walk;
-      const nx = this.x + (fx / len) * speed * dt;
-      const nz = this.z + (fz / len) * speed * dt;
-      const want = Math.atan2(fx, fz);
-      let dh = want - this.heading;
-      while (dh > Math.PI) dh -= Math.PI * 2;
-      while (dh < -Math.PI) dh += Math.PI * 2;
-      this.heading += clamp(dh, -8 * dt, 8 * dt);
-      const hit = collideCircle(colliders, nx, nz, PLAYER.radius);
-      this.x = clamp(hit.x, -half - 8, half + 34);
-      this.z = clamp(hit.z, -half - 8, half + 34);
-    }
-    // Slow health regen after 5 calm seconds.
-    if (this.time - this.lastHurtAt > 5 && this.health > 0 && this.health < PLAYER.health) {
-      this.health = Math.min(PLAYER.health, this.health + 2 * dt);
-    }
-    this.sync();
-  }
-  enterCar(vehicle) {
-    this.vehicle = vehicle;
-    vehicle.ai = null;
-    this.sync();
-  }
-  exitCar() {
-    if (!this.vehicle) return null;
-    const v = this.vehicle;
-    this.vehicle = null;
-    // Step out on the driver's side.
-    this.x = v.x - Math.cos(v.heading) * 2.2;
-    this.z = v.z + Math.sin(v.heading) * 2.2;
-    this.heading = v.heading;
-    this.sync();
-    return v;
-  }
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.85, 0.4), shirt);
+  torso.position.y = 1.28;
+  torso.castShadow = true;
+  group.add(torso);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.42), skin);
+  head.position.y = 1.95;
+  head.castShadow = true;
+  group.add(head);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.46), hair);
+  cap.position.y = 2.2;
+  group.add(cap);
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.85, 0.3), pants);
+  legL.position.set(-0.19, 0.43, 0);
+  group.add(legL);
+  const legR = legL.clone();
+  legR.position.x = 0.19;
+  group.add(legR);
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.75, 0.26), shirt);
+  armL.position.set(-0.48, 1.3, 0);
+  group.add(armL);
+  const armR = armL.clone();
+  armR.position.x = 0.48;
+  group.add(armR);
+  // A simple pistol held in the right hand.
+  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.42), new THREE.MeshLambertMaterial({ color: 0x111111 }));
+  gun.position.set(0.48, 0.95, 0.28);
+  group.add(gun);
+
+  scene.add(group);
+
+  const player = {
+    group,
+    x: 0,
+    z: 120,
+    heading: 0,      // facing
+    camYaw: 0,       // camera orbit yaw
+    speed: 0,
+    health: CONFIG.startHealth,
+    ammo: CONFIG.pistolAmmo,
+    ammoReserve: 60,
+    inCar: null,
+    walkPhase: 0,
+    dead: false,
+    setPosition(x, z, heading) {
+      player.x = x;
+      player.z = z;
+      if (heading !== undefined) {
+        player.heading = heading;
+        player.camYaw = heading;
+      }
+      group.position.set(x, 0, z);
+      group.rotation.y = heading;
+    },
+    update(dt, input, state) {
+      if (player.dead || player.inCar) return;
+      const ax = input.axis();
+      const sprint = input.down('ShiftLeft') || input.down('ShiftRight');
+      const target = sprint ? CONFIG.playerRunSpeed : CONFIG.playerWalkSpeed;
+      const moving = ax.x !== 0 || ax.z !== 0;
+      // Camera-relative movement: forward is where the camera looks.
+      const fwdX = -Math.sin(player.camYaw);
+      const fwdZ = -Math.cos(player.camYaw);
+      const rightX = Math.cos(player.camYaw);
+      const rightZ = -Math.sin(player.camYaw);
+      let mx = fwdX * -ax.z + rightX * ax.x;
+      let mz = fwdZ * -ax.z + rightZ * ax.x;
+      const len = Math.hypot(mx, mz);
+      if (len > 0) {
+        mx /= len;
+        mz /= len;
+      }
+      const want = moving ? target : 0;
+      player.speed += (want - player.speed) * Math.min(1, dt * 8);
+      player.x += mx * player.speed * dt;
+      player.z += mz * player.speed * dt;
+      const hit = city.collide(player.x, player.z, 0.6);
+      player.x = hit.x;
+      player.z = hit.z;
+      if (!city.insideCity(player.x, player.z)) {
+        player.x = clamp(player.x, -city.half - 4, city.half + 4);
+        player.z = clamp(player.z, -city.half - 4, city.half + 44);
+      }
+      if (moving && player.speed > 0.5) {
+        player.heading = angleLerp(player.heading, Math.atan2(mx, mz), Math.min(1, dt * 10));
+        player.walkPhase += dt * player.speed * 1.4;
+        const swing = Math.sin(player.walkPhase) * 0.5;
+        legL.rotation.x = swing;
+        legR.rotation.x = -swing;
+        armL.rotation.x = -swing * 0.8;
+        armR.rotation.x = swing * 0.8;
+      } else {
+        legL.rotation.x = 0;
+        legR.rotation.x = 0;
+        armL.rotation.x = 0;
+        armR.rotation.x = 0;
+      }
+      group.position.set(player.x, 0, player.z);
+      group.rotation.y = player.heading;
+      // Mouse orbit (pointer lock) turns the camera, not the body.
+      player.camYaw -= input.mouse.dx * 0.0032;
+      player.camYaw = ((player.camYaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      void state;
+    },
+    damage(amount) {
+      if (player.dead) return false;
+      player.health -= amount;
+      if (player.health <= 0) {
+        player.health = 0;
+        player.dead = true;
+      }
+      return player.dead;
+    },
+    heal(amount) {
+      player.health = clamp(player.health + amount, 0, CONFIG.startHealth);
+    },
+  };
+  player.setPosition(0, 120, 0);
+  return player;
 }

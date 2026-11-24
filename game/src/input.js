@@ -1,88 +1,80 @@
-// Keyboard + mouse. Physical keys feed `keys`; tests and staged shots drive the
-// game through `virtual`, which overrides the physical state while it is set.
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
-export const ACTION_ENTER = 4;
-export const ACTION_PUNCH = 8;
-export const ACTION_SHOOT = 16;
-export const ACTION_RELOAD = 32;
-export const ACTION_RADIO = 64;
+// SOLMAR BAY — keyboard + mouse state, with edge-triggered "pressed" events.
 
-export function createInput(canvas) {
+export function createInput(canvasHost) {
   const keys = new Set();
   const pressed = new Set();
-  let actions = 0;
-  let dragDX = 0;
-  let dragDY = 0;
-  let wheel = 0;
-  let dragging = false;
-  let lastX = 0;
-  let lastY = 0;
-
-  const KEYMAP = {
-    KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down',
-    KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
-    ShiftLeft: 'run', ShiftRight: 'run', Space: 'punch', KeyF: 'shoot',
-    KeyE: 'enter', KeyR: 'reload', KeyQ: 'radio', KeyM: 'brief',
-  };
-  const ACTIONMAP = { Enter: ACTION_CONFIRM, Space: ACTION_PUNCH, KeyF: ACTION_SHOOT, KeyE: ACTION_ENTER, KeyR: ACTION_RELOAD, KeyQ: ACTION_RADIO, Escape: ACTION_PAUSE };
+  const mouse = { x: 0, y: 0, dx: 0, dy: 0, down: false, clicked: false, locked: false };
 
   function onKeyDown(e) {
     if (e.repeat) return;
     keys.add(e.code);
     pressed.add(e.code);
-    if (ACTIONMAP[e.code] !== undefined) actions |= ACTIONMAP[e.code];
-    if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+    if (['Space', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) e.preventDefault();
   }
-  function onKeyUp(e) { keys.delete(e.code); }
-  function onMouseDown(e) { dragging = true; lastX = e.clientX; lastY = e.clientY; }
+  function onKeyUp(e) {
+    keys.delete(e.code);
+  }
   function onMouseMove(e) {
-    if (!dragging) return;
-    dragDX += e.clientX - lastX; dragDY += e.clientY - lastY;
-    lastX = e.clientX; lastY = e.clientY;
+    if (document.pointerLockElement === canvasHost) {
+      mouse.dx += e.movementX || 0;
+      mouse.dy += e.movementY || 0;
+    }
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
   }
-  function onMouseUp() { dragging = false; }
-  function onWheel(e) { wheel += e.deltaY; e.preventDefault(); }
-  function onClick(e) { if (e.target === canvas) actions |= ACTION_SHOOT; }
+  function onMouseDown(e) {
+    if (e.button === 0) {
+      mouse.down = true;
+      mouse.clicked = true;
+    }
+  }
+  function onMouseUp(e) {
+    if (e.button === 0) mouse.down = false;
+  }
+  function onLockChange() {
+    mouse.locked = document.pointerLockElement === canvasHost;
+  }
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
-  canvas.addEventListener('mousedown', onMouseDown);
   window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mousedown', onMouseDown);
   window.addEventListener('mouseup', onMouseUp);
-  canvas.addEventListener('wheel', onWheel, { passive: false });
-  canvas.addEventListener('click', onClick);
+  document.addEventListener('pointerlockchange', onLockChange);
 
-  const input = {
-    virtual: null, // {up,down,left,right,run,...} — overrides physical keys while set
-    read() {
-      const v = this.virtual;
-      const down = (name) => (v && v[name] !== undefined ? !!v[name] : [...keys].some((c) => KEYMAP[c] === name));
-      return {
-        up: down('up'), down: down('down'), left: down('left'), right: down('right'),
-        run: down('run'), punch: down('punch'), shoot: down('shoot'),
-        enter: down('enter'), reload: down('reload'), radio: down('radio'), brief: down('brief'),
-      };
+  return {
+    keys,
+    mouse,
+    down(code) {
+      return keys.has(code);
     },
-    // Edge-triggered actions since the last call; also consumes the brief key.
-    takeActions() {
-      const a = actions;
-      actions = 0;
-      if (pressed.has('KeyM')) a |= 0; // brief handled via read()
-      return a;
+    // True only on the frame the key went down; consumed by endFrame().
+    wasPressed(code) {
+      return pressed.has(code);
     },
-    briefPressed() {
-      const hit = pressed.has('KeyM') || (this.virtual && this.virtual.brief);
-      pressed.delete('KeyM');
-      return hit;
+    axis() {
+      let x = 0;
+      let z = 0;
+      if (keys.has('KeyW') || keys.has('ArrowUp')) z -= 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) z += 1;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
+      return { x, z };
     },
-    takeCamera() {
-      const d = { dx: dragDX, dy: dragDY, wheel };
-      dragDX = 0; dragDY = 0; wheel = 0;
-      return d;
+    requestLock() {
+      if (canvasHost && canvasHost.requestPointerLock && document.pointerLockElement !== canvasHost) {
+        try {
+          canvasHost.requestPointerLock();
+        } catch (_err) {
+          /* pointer lock is a nicety, not a requirement */
+        }
+      }
     },
-    confirmPressed() { return pressed.has('Enter'); },
-    clearPressed() { pressed.clear(); },
+    endFrame() {
+      pressed.clear();
+      mouse.dx = 0;
+      mouse.dy = 0;
+      mouse.clicked = false;
+    },
   };
-  return input;
 }

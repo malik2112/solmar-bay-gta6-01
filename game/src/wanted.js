@@ -24,6 +24,15 @@ export function createWanted(scene, city) {
       wanted.heat = n;
       wanted.stars = n;
     },
+    clearHeat() {
+      wanted.heat = 0;
+      wanted.stars = 0;
+      wanted.bustTimer = 0;
+      while (police.length > 0) wanted.removePolice(police[0]);
+    },
+    isBeingChased() {
+      return police.length > 0 && wanted.stars > 0;
+    },
     spawnPolice(x, z) {
       if (police.length >= CONFIG.policeMax) return null;
       const mesh = makeCarMesh(PALETTE.policePaint, 'police');

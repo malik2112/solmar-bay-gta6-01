@@ -1,1 +1,1 @@
-{"type":"module"}
+{"description":"SOLMAR BAY — a sun-soaked open-world crime game for make.fun gta6-01. Three.js, static files, no build step.","license":"MIT","name":"solmar-bay","scripts":{"dossier":"node main.ts","selftest":"node serve.ts 8901 & sleep 1; echo 'open http://127.0.0.1:8901/game/index.html?selftest=1'","shots":"node ../shot-driver.mjs","start":"node serve.ts"},"type":"module","version":"3.0.0"}

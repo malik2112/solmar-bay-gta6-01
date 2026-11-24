@@ -59,6 +59,24 @@ export function applyShot(name, state) {
     return;
   }
 
+  if (name === 'chase') {
+    // Two-star chase down the beachfront road: Vic in the gold coupe, two
+    // cruisers closing from behind, palms and ocean on the left.
+    const car = vehicles.addCar(150, -210, 0, 'sport', 0xd4af37, { parked: false, name: 'gold-coupe' });
+    car.driver = 'player';
+    player.inCar = car;
+    player.group.visible = false;
+    car.speed = 34;
+    wanted.setStars(2);
+    for (const dz of [-60, -95]) {
+      const cop = wanted.spawnPolice(150, -210 + dz);
+      if (cop) cop.heading = 0;
+    }
+    state.shotCruise = true;
+    player.setPosition(150, -210, 0);
+    return;
+  }
+
   // Unknown preset: plain street scene.
   player.setPosition(0, 0, 0);
   wanted.setStars(0);

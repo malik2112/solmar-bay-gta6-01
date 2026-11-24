@@ -19,12 +19,19 @@ const TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.md': 'text/plain; charset=utf-8',
 };
 
 const server = createServer((req, res) => {
   try {
     const url = new URL(req.url || '/', `http://127.0.0.1:${port}`);
+    // Health endpoint for the screenshot driver and monitors.
+    if (url.pathname === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, game: 'solmar-bay', time: new Date().toISOString() }));
+      return;
+    }
     let path = decodeURIComponent(url.pathname);
     if (path === '/') path = '/game/index.html';
     const file = join(here, path);
@@ -33,6 +40,17 @@ const server = createServer((req, res) => {
       res.end('not found');
       return;
     }
+    // HEAD answers with headers only, same as GET minus the body.
+    if (req.method === 'HEAD') {
+      res.writeHead(200, {
+        'content-type': TYPES[extname(file).toLowerCase()] || 'application/octet-stream',
+        'cache-control': 'no-store',
+        'content-length': statSync(file).size,
+      });
+      res.end();
+      return;
+    }
+    console.log(`${new Date().toISOString()} ${req.method} ${url.pathname}`);
     res.writeHead(200, {
       'content-type': TYPES[extname(file).toLowerCase()] || 'application/octet-stream',
       'cache-control': 'no-store',

@@ -32,6 +32,22 @@ export function pickN(rng, arr, n) {
   return out;
 }
 
+// Fisher–Yates shuffle, in place, driven by the caller's rng.
+export function shuffle(rng, arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
+// Approximately normal value (mean 0, sd 1) from three uniform draws.
+export function gauss(rng) {
+  return (rng() + rng() + rng() - 1.5) * 1.2;
+}
+
 export function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }

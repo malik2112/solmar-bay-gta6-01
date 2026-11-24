@@ -64,6 +64,25 @@ export function createPedestrians(scene, city) {
         if (Math.hypot(p.x - x, p.z - z) < radius) p.panic = 1;
       }
     },
+    // Closest walker to a point, or null when nobody is within maxD.
+    nearest(x, z, maxD) {
+      let best = null;
+      let bd = maxD;
+      for (const p of peds) {
+        const d = Math.hypot(p.x - x, p.z - z);
+        if (d < bd) {
+          bd = d;
+          best = p;
+        }
+      }
+      return best;
+    },
+    // How many walkers are currently running for the beach.
+    countPanicked() {
+      let n = 0;
+      for (const p of peds) if (p.panic > 0.05) n++;
+      return n;
+    },
     update(dt, wantedStars) {
       for (const p of peds) {
         if (wantedStars >= 3) p.panic = Math.max(p.panic, 0.6);

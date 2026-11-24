@@ -59,3 +59,35 @@ export function clearSave() {
     /* storage may be unavailable; the game still runs */
   }
 }
+
+// Portable save: a JSON string the player can copy out (or paste back in),
+// so progress survives a wiped browser profile.
+export function exportSave(state) {
+  const data = {
+    version: 1,
+    money: Math.round(state.money),
+    health: Math.round(state.health),
+    missionsDone: state.missionsDone.slice(),
+    missionIndex: state.missionIndex,
+    player: { x: state.player.x, z: state.player.z, heading: state.player.heading },
+    radio: state.radioStation,
+    playSeconds: Math.round(state.playSeconds || 0),
+  };
+  return JSON.stringify(data);
+}
+
+export function importSave(json) {
+  try {
+    const data = JSON.parse(json);
+    if (!data || data.version !== 1) return null;
+    const d = defaultSave();
+    return {
+      ...d,
+      ...data,
+      missionsDone: Array.isArray(data.missionsDone) ? data.missionsDone : [],
+      player: { ...d.player, ...(data.player || {}) },
+    };
+  } catch (_err) {
+    return null;
+  }
+}

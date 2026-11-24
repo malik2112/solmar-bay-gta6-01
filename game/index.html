@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SOLMAR BAY — a sun-soaked open-world crime game: steal cars, run five story jobs, lose the Solmar Bay PD. Runs offline in a desktop browser.">
 <title>SOLMAR BAY — Open-World Crime Game</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -28,6 +29,21 @@
   #menu button:active { transform: translateY(3px); box-shadow: none; }
   #menu button.ghost { background: transparent; color: #ffd84d; border: 2px solid #ffd84d; box-shadow: none; }
   #menu .fine { font-size: 12px; color: #9fb6c4; }
+  #pauseMenu { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 16px; padding: 24px; text-align: center;
+    background: rgba(6,20,30,.78); pointer-events: auto; }
+  #pauseMenu h2 { font-size: 44px; letter-spacing: 8px; color: #ffd84d; }
+  #pauseStats { font-size: 15px; color: #bfe3ff; }
+  #missionList { display: flex; flex-direction: column; gap: 6px; max-width: 620px; text-align: left; }
+  #missionList .missionRow { background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.18);
+    border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+  #missionList .missionRow b { display: block; color: #ffd84d; font-size: 13px; }
+  #missionList .missionRow.done { opacity: .55; }
+  #missionList .missionRow.done b::after { content: " ✓ DONE"; color: #7dff9b; }
+  #pauseMenu button { pointer-events: auto; cursor: pointer; font-size: 16px; font-weight: 700;
+    letter-spacing: 1px; color: #14202a; background: #ffd84d; border: none; border-radius: 10px;
+    padding: 12px 28px; }
+  #pauseMenu button.ghost { background: transparent; color: #ffd84d; border: 2px solid #ffd84d; }
   #topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between;
     align-items: flex-start; padding: 14px 18px; gap: 16px; }
   #missionBox { background: rgba(6,20,30,.72); border: 1px solid rgba(255,255,255,.25); border-radius: 10px;
@@ -38,17 +54,22 @@
     border-radius: 10px; padding: 10px 14px; }
   #stars { font-size: 22px; letter-spacing: 3px; color: #fff; }
   #cash { font-size: 22px; font-weight: 800; color: #7dff9b; }
+  #timeText { font-size: 13px; color: #bfe3ff; letter-spacing: 1px; }
   #bottombar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between;
     align-items: flex-end; padding: 14px 18px; gap: 16px; }
   #vitals { display: flex; flex-direction: column; gap: 8px; width: 300px; }
   .bar { position: relative; height: 22px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.35);
     border-radius: 6px; overflow: hidden; }
   .bar i { display: block; height: 100%; width: 100%; background: #37c978; }
+  .bar.stamina i { background: #4db2ff; }
+  .bar.ammo i { background: #ffd84d; }
   .bar span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     font-size: 11px; font-weight: 700; letter-spacing: 2px; }
   #carBox { display: flex; flex-direction: column; align-items: center; gap: 2px;
     background: rgba(6,20,30,.72); border: 1px solid rgba(255,255,255,.25); border-radius: 10px; padding: 8px 18px; }
   #speedText { font-size: 26px; font-weight: 800; }
+  #speedUnit { font-size: 11px; color: #9fb6c4; letter-spacing: 2px; }
+  #gearText { font-size: 15px; font-weight: 800; color: #ffd84d; }
   #radioText { font-size: 12px; color: #bfe3ff; }
   #minimap { border: 2px solid rgba(255,255,255,.7); border-radius: 8px; background: #0c1c26;
     box-shadow: 0 4px 18px rgba(0,0,0,.5); }
@@ -63,15 +84,29 @@
   #hint.show { opacity: 1; }
   #centerMsg { position: absolute; left: 50%; top: 38%; transform: translate(-50%,-50%); font-size: 34px;
     font-weight: 900; letter-spacing: 2px; color: #ffd84d; text-align: center;
-    text-shadow: 0 3px 0 #000, 0 6px 24px rgba(0,0,0,.8); max-width: 80%; }
+    text-shadow: 0 3px 0 #000, 0 6px 24px rgba(0,0,0,.8); max-width: 80%; opacity: 0; transition: opacity .3s; }
+  #damage { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,.55) 100%); }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: #0c1c26; color: #ffd84d; font-size: 18px; letter-spacing: 4px; z-index: 50; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three/three.module.min.js" } }
 </script>
 </head>
 <body>
+<div id="loading">SOLMAR BAY — LOADING…</div>
 <div id="app"></div>
 <div id="hud"></div>
+<noscript><p style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0c1c26;color:#fff;z-index:60">SOLMAR BAY needs JavaScript enabled.</p></noscript>
 <script type="module" src="./src/main.js"></script>
+<script>
+  // The loading veil lifts once the game signals it booted.
+  const veil = document.getElementById('loading');
+  const lift = setInterval(() => {
+    if (window.__solmarReady) { veil.remove(); clearInterval(lift); }
+  }, 200);
+  setTimeout(() => { veil.remove(); clearInterval(lift); }, 15000);
+</script>
 </body>
 </html>

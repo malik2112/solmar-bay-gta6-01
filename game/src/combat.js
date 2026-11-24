@@ -64,6 +64,19 @@ export function createCombat(scene, camera) {
       if (audio) audio.reload();
       return true;
     },
+    // Top the reserve up (ammo pickups, mission rewards). Returns how many
+    // rounds were actually added.
+    giveAmmo(player, rounds, audio) {
+      const before = player.ammoReserve;
+      player.ammoReserve = clamp(player.ammoReserve + rounds, 0, 240);
+      if (audio && player.ammoReserve > before) audio.pickup();
+      return player.ammoReserve - before;
+    },
+    // Hitscan damage falls off with distance: full inside 25 m, half past 60 m.
+    damageAt(distance) {
+      const t = clamp((distance - 25) / 35, 0, 1);
+      return Math.round(CONFIG.pistolDamage * (1 - t * 0.5));
+    },
     update(dt, t) {
       cooldown = Math.max(0, cooldown - dt);
       flashLight.intensity = t < flashUntil ? 60 : 0;

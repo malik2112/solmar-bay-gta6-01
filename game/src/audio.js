@@ -161,6 +161,22 @@ export function createAudio() {
       if (!ensure()) return;
       tone(220, 0.2, 'sawtooth', 0.4, 0, 70);
     },
+    horn() {
+      if (!ensure()) return;
+      // Two-tone car horn: a fifth apart, short and polite.
+      tone(370, 0.28, 'square', 0.22);
+      tone(466, 0.28, 'square', 0.22);
+    },
+    skid() {
+      if (!ensure()) return;
+      tone(900, 0.3, 'sawtooth', 0.12, 0, 420);
+    },
+    pickup() {
+      if (!ensure()) return;
+      tone(523, 0.08, 'sine', 0.3);
+      tone(784, 0.1, 'sine', 0.3, 0.07);
+      tone(1046, 0.14, 'sine', 0.3, 0.14);
+    },
     siren(on) {
       if (on && !sirenTimer && ctx) {
         let up = true;

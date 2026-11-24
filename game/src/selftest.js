@@ -15,6 +15,14 @@ export function runSelftest(state) {
   check('traffic spawned', state.vehicles.traffic.length >= 10, `${state.vehicles.traffic.length} cars`);
   check('pedestrians spawned', state.peds.peds.length >= 20, `${state.peds.peds.length} walkers`);
   check('missions defined', state.missions.currentDef() !== null, '5 missions');
+  check('player stamina', typeof state.player.stamina === 'number' && state.player.stamina >= 0, `stamina=${state.player.stamina}`);
+  check('radio stations', state.audio.stationName().length > 0, state.audio.stationName());
+  check('mission marker resolves', (() => {
+    state.missions.applySave([], 0);
+    state.missions.start();
+    const m = state.missions.markerPos();
+    return m !== null && typeof m.x === 'number' && typeof m.z === 'number';
+  })(), 'steal step points at a parked car');
   check('hud mounted', !!document.getElementById('minimap'));
   check('save roundtrip', (() => {
     try {

@@ -50,6 +50,8 @@ export function createPlayer(scene, city) {
     camYaw: 0,       // camera orbit yaw
     speed: 0,
     health: CONFIG.startHealth,
+    stamina: 100, // 0..100; sprint drains it, standing still refills it
+    winded: false,
     ammo: CONFIG.pistolAmmo,
     ammoReserve: 60,
     inCar: null,
@@ -68,9 +70,16 @@ export function createPlayer(scene, city) {
     update(dt, input, state) {
       if (player.dead || player.inCar) return;
       const ax = input.axis();
-      const sprint = input.down('ShiftLeft') || input.down('ShiftRight');
+      const wantSprint = input.down('ShiftLeft') || input.down('ShiftRight');
+      // Sprinting drains stamina; at zero the player is winded and forced to
+      // walk until stamina recovers past 25.
+      if (wantSprint && player.stamina <= 0) player.winded = true;
+      if (player.winded && player.stamina >= 25) player.winded = false;
+      const sprint = wantSprint && !player.winded;
       const target = sprint ? CONFIG.playerRunSpeed : CONFIG.playerWalkSpeed;
       const moving = ax.x !== 0 || ax.z !== 0;
+      if (sprint && moving) player.stamina = clamp(player.stamina - dt * 22, 0, 100);
+      else player.stamina = clamp(player.stamina + dt * (moving ? 8 : 16), 0, 100);
       // Camera-relative movement: forward is where the camera looks.
       const fwdX = -Math.sin(player.camYaw);
       const fwdZ = -Math.cos(player.camYaw);
